@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shakuhachi Score Transcriber | Kinko-ryu & Tozan-ryu</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #18181b; color: #f4f4f5; }
+    .jp-serif { font-family: 'Noto Serif JP', serif; }
+    
+    /* Fullscreen Magnification & Pinned Navigation Bar */
+    #score-wrapper:fullscreen {
+      background-color: #fcfaf2;
+      padding: 1rem 2rem;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+    }
+    #score-wrapper:fullscreen #score-nav-bar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      max-width: 960px;
+      width: 100%;
+      margin-bottom: 1rem;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+    }
+    #score-wrapper:fullscreen #score-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+    }
+    #score-wrapper:fullscreen #shakuhachi-svg {
+      height: calc(84vh * var(--fs-zoom, 1)) !important;
+      width: auto !important;
+      max-width: none !important;
+      transition: height 0.15s ease-out;
+    }
+
+    @media print {
+      .no-print { display: none !important; }
+      body { background-color: #ffffff; color: #000000; }
+      #score-wrapper { border: none !important; box-shadow: none !important; background: #fff !important; padding: 0 !important; }
+      #shakuhachi-svg { width: 100% !important; height: auto !important; }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Hidden Netlify Form for Verified Public Repository Submissions -->
+  <form name="repository-submissions" netlify netlify-honeypot="bot-field" hidden>
+    <input type="text" name="title" />
+    <input type="text" name="composer" />
+    <input type="text" name="contributor" />
+    <input type="text" name="flute" />
+    <textarea name="abc_data"></textarea>
+    <textarea name="json_entry"></textarea>
+  </form>
+
+  <!-- Top Navigation Header -->
+  <header class="no-print border-b border-zinc-800 bg-zinc-900/90 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+    <div>
+      <h1 class="text-xl font-semibold tracking-tight text-amber-500 flex items-center gap-2.5">
+        <span class="jp-serif text-2xl">尺八譜</span> Shakuhachi Score Transcriber
+      </h1>
+      <p class="text-xs text-zinc-400">Chikumeisha (Kinko-ryu) & Tozan-ryu Metric Engraver • Western Staff / ABC / MusicXML to Bamboo Notation</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2.5">
+      <button onclick="toggleModal('about-modal', true)" class="px-3 py-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-amber-400 rounded border border-zinc-700 transition">
+        About This App
+      </button>
+      <button onclick="toggleFullScreen()" class="px-3 py-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded border border-zinc-700 transition flex items-center gap-1.5">
+        <span>⛶</span> Full Screen Score
+      </button>
+      <button onclick="window.print()" class="px-3 py-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded border border-zinc-700 transition">
+        Print / PDF
+      </button>
+      <button onclick="downloadSVG()" class="px-3 py-1.5 text-xs font-medium bg-amber-600 hover:bg-amber-500 text-zinc-950 font-semibold rounded transition">
+        Download SVG
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-6">
+
+    <!-- Left Controls Panel -->
+    <section class="no-print lg:col-span-5 flex flex-col gap-4 bg-zinc-900 p-5 rounded-xl border border-zinc-800 h-fit">
+      
+      <!-- Repository Selector -->
+      <div class="bg-zinc-950/60 p-3.5 rounded-lg border border-zinc-800">
+        <div class="flex flex-wrap items-center justify-between gap-1 mb-2">
+          <label class="text-xs font-semibold text-amber-500">Score Repository Library</label>
+          <div class="flex items-center gap-1.5">
+            <button id="delete-local-btn" onclick="deleteFromLocalLibrary()" class="hidden text-[11px] bg-red-950/60 hover:bg-red-900/80 text-red-300 px-2 py-0.5 rounded border border-red-800/60 transition" title="Delete this saved entry from your browser">
+              🗑 Delete Saved
+            </button>
+            <button onclick="saveToLocalLibrary()" class="text-[11px] bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-2 py-0.5 rounded border border-zinc-700 transition" title="Save current score to your browser">
+              + Save to My Library
+            </button>
+            <button onclick="toggleModal('submit-modal', true)" class="text-[11px] bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 px-2 py-0.5 rounded border border-amber-500/40 transition" title="Submit for verification to the public repository">
+              ↑ Submit to Public Archive
+            </button>
+          </div>
+        </div>
+        <select id="repo-select" onchange="loadFromRepository(this.value)" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-amber-500">
+          <!-- Populated dynamically -->
+        </select>
+      </div>
+
+      <!-- Notation, Instrument & Time Signature Settings -->
+      <div class="grid grid-cols-12 gap-2.5">
+        <div class="col-span-5">
+          <label class="block text-xs font-medium text-zinc-400 mb-1">School / System</label>
+          <select id="school-select" onchange="renderScore()" class="w-full bg-zinc-800 border border-zinc-700 rounded px-2.5 py-2 text-xs text-zinc-100 focus:outline-none focus:border-amber-500">
+            <option value="kinko">Kinko-ryu (Chikumeisha)</option>
+            <option value="tozan">Tozan-ryu (Metric Grid)</option>
+          </select>
+        </div>
+
+        <div class="col-span-4">
+          <label class="block text-xs font-medium text-zinc-400 mb-1">Instrument Key</label>
+          <select id="flute-select" onchange="renderScore()" class="w-full bg-zinc-800 border border-zinc-700 rounded px-2.5 py-2 text-xs text-zinc-100 focus:outline-none focus:border-amber-500">
+            <option value="62">1.8 Shaku (D4)</option>
+            <option value="57">2.4 Shaku (A3)</option>
+            <option value="60">2.0 Shaku (C4)</option>
+            <option value="65">1.6 Shaku (F4)</option>
+          </select>
+        </div>
+
+        <div class="col-span-3">
+          <label class="block text-xs font-medium text-zinc-400 mb-1">Time Sig</label>
+          <select id="timesig-select" onchange="renderScore()" class="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-2 text-xs text-zinc-100 focus:outline-none focus:border-amber-500">
+            <option value="4">4/4 (4-Beat)</option>
+            <option value="2">2/4 (2-Beat)</option>
+            <option value="3">3/4 (3-Beat)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Title, Transpose, Sustain & Hints -->
+      <div class="grid grid-cols-12 gap-2.5">
+        <div class="col-span-5">
+          <label class="block text-xs font-medium text-zinc-400 mb-1">Piece Title</label>
+          <input type="text" id="score-title" value="" oninput="renderScore()" class="w-full bg-zinc-800 border border-zinc-700 rounded px-2.5 py-1.5 text-xs text-zinc-100">
+        </div>
+        <div class="col-span-2">
+          <label class="block text-xs font-medium text-zinc-400 mb-1">Transpose</label>
+          <input type="number" id="transpose-input" value="0" min="-12" max="12" onchange="renderScore()" class="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-100" title="Semitones (e.g. +12 for +1 Octave)">
+        </div>
+        <div class="col-span-3">
+          <label class="block text-xs font-medium text-zinc-400 mb-1">Kinko Sustain</label>
+          <select id="sustain-style" onchange="renderScore()" class="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-100">
+            <option value="line">Bar (｜)</option>
+            <option value="dots">Dots Only</option>
+          </select>
+        </div>
+        <div class="col-span-2">
+          <label class="block text-xs font-medium text-zinc-400 mb-1">Pitch Hints</label>
+          <select id="show-hints" onchange="renderScore()" class="w-full bg-zinc-800 border border-zinc-700 rounded px-1.5 py-1.5 text-xs text-zinc-100">
+            <option value="no">Hide</option>
+            <option value="yes">Show</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- File Upload (MusicXML / ABC / TXT) -->
+      <div class="border border-dashed border-zinc-700 rounded-lg p-3 bg-zinc-950/40 flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-zinc-300">Upload MusicXML (`.musicxml`, `.xml`) or ABC (`.abc`, `.txt`)</p>
+          <p class="text-[11px] text-zinc-500">Automatically extracts monophonic melody and durations</p>
+        </div>
+        <label class="cursor-pointer px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-xs font-medium rounded border border-zinc-600 transition shrink-0">
+          Choose File
+          <input type="file" id="file-upload" accept=".xml,.musicxml,.abc,.txt" class="hidden" onchange="handleFileUpload(event)">
+        </label>
+      </div>
+
+      <!-- Interactive Note Clicker -->
+      <div class="bg-zinc-950/60 p-3.5 rounded-lg border border-zinc-800/80">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-medium text-amber-500">Interactive Note Pad (Click to Append)</span>
+          <div class="flex items-center gap-1">
+            <span class="text-[11px] text-zinc-400 mr-1">Octave:</span>
+            <button onclick="setPadOctave(3)" id="oct-3" class="px-2 py-0.5 text-xs rounded bg-zinc-800 text-zinc-400">3 (Low)</button>
+            <button onclick="setPadOctave(4)" id="oct-4" class="px-2 py-0.5 text-xs rounded bg-amber-600 text-zinc-950 font-semibold">4 (Mid)</button>
+            <button onclick="setPadOctave(5)" id="oct-5" class="px-2 py-0.5 text-xs rounded bg-zinc-800 text-zinc-400">5 (High)</button>
+          </div>
+        </div>
+
+        <!-- Duration Selector -->
+        <div class="flex gap-1.5 mb-2.5">
+          <button onclick="setPadDur('4')" id="dur-4" class="flex-1 py-1 text-xs rounded bg-zinc-800 text-zinc-300 border border-zinc-700">𝅝 Whole (4)</button>
+          <button onclick="setPadDur('2')" id="dur-2" class="flex-1 py-1 text-xs rounded bg-zinc-800 text-zinc-300 border border-zinc-700">𝅗𝅥 Half (2)</button>
+          <button onclick="setPadDur('1')" id="dur-1" class="flex-1 py-1 text-xs rounded bg-amber-600/20 text-amber-400 border border-amber-500/50 font-medium">𝅘𝅥 Quarter (1)</button>
+          <button onclick="setPadDur('1/2')" id="dur-1/2" class="flex-1 py-1 text-xs rounded bg-zinc-800 text-zinc-300 border border-zinc-700">𝅘𝅥𝅮 8th (1/2)</button>
+          <button onclick="setPadDur('1/4')" id="dur-1/4" class="flex-1 py-1 text-xs rounded bg-zinc-800 text-zinc-300 border border-zinc-700">𝅘𝅥𝅯 16th (1/4)</button>
+        </div>
+
+        <!-- Pitch Buttons -->
+        <div class="grid grid-cols-7 gap-1 mb-1.5">
+          <button onclick="appendAbcNote('C')" class="py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-xs font-medium">C</button>
+          <button onclick="appendAbcNote('D')" class="py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-xs font-medium">D</button>
+          <button onclick="appendAbcNote('E')" class="py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-xs font-medium">E</button>
+          <button onclick="appendAbcNote('F')" class="py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-xs font-medium">F</button>
+          <button onclick="appendAbcNote('G')" class="py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-xs font-medium">G</button>
+          <button onclick="appendAbcNote('A')" class="py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-xs font-medium">A</button>
+          <button onclick="appendAbcNote('B')" class="py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-xs font-medium">B</button>
+        </div>
+        <div class="grid grid-cols-6 gap-1">
+          <button onclick="appendAbcNote('^C')" class="py-1 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 rounded text-[11px] border border-zinc-800">C# (^C)</button>
+          <button onclick="appendAbcNote('_E')" class="py-1 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 rounded text-[11px] border border-zinc-800">Eb (_E)</button>
+          <button onclick="appendAbcNote('^F')" class="py-1 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 rounded text-[11px] border border-zinc-800">F# (^F)</button>
+          <button onclick="appendAbcNote('^G')" class="py-1 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 rounded text-[11px] border border-zinc-800">G# (^G)</button>
+          <button onclick="appendAbcNote('_B')" class="py-1 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 rounded text-[11px] border border-zinc-800">Bb (_B)</button>
+          <button onclick="appendAbcNote('z')" class="py-1 bg-red-950/40 hover:bg-red-900/50 text-red-300 rounded text-[11px] border border-red-900/40">Rest (z)</button>
+        </div>
+      </div>
+
+      <!-- Score Input in ABC Notation -->
+      <div class="flex flex-col flex-1">
+        <div class="flex items-center justify-between mb-1">
+          <label class="text-xs font-medium text-zinc-400">Score Input in ABC Notation</label>
+          <button onclick="document.getElementById('note-input').value=''; currentPage=0; renderScore();" class="text-[11px] text-zinc-500 hover:text-zinc-300">Clear Editor</button>
+        </div>
+        <textarea id="note-input" rows="5" oninput="currentPage=0; renderScore();" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-xs font-mono text-zinc-200 focus:outline-none focus:border-amber-500" placeholder="Enter standard ABC notation..."></textarea>
+        <p class="text-[11px] text-zinc-500 mt-1.5">
+          Long pieces are automatically formatted into balanced 8-column pages. Use <code class="text-amber-400">◀ Prev / Next ▶</code> (or Left/Right keyboard arrows) to flip pages.
+        </p>
+      </div>
+
+    </section>
+
+    <!-- Right Score Canvas -->
+    <section class="lg:col-span-7 flex flex-col">
+      <div id="score-wrapper" style="--fs-zoom: 1;" class="bg-[#fcfaf2] text-zinc-900 rounded-xl border border-zinc-700 shadow-2xl p-5 overflow-x-auto flex-1 flex flex-col items-center justify-start min-h-[680px] relative">
+        
+        <!-- Unified Page Navigation & Magnification Bar (Visible in Normal & Full Screen!) -->
+        <div id="score-nav-bar" class="no-print w-full flex flex-wrap items-center justify-between gap-3 mb-3 px-4 py-2.5 bg-zinc-900 text-zinc-200 rounded-xl border border-zinc-700 shadow-md">
+          
+          <!-- Page Flipper -->
+          <div class="flex items-center gap-2">
+            <button onclick="changePage(-1)" id="prev-page-btn" class="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-35 rounded text-xs font-semibold border border-zinc-600 transition flex items-center gap-1 cursor-pointer">
+              ◀ Prev Page
+            </button>
+            <span id="page-indicator" class="text-xs font-semibold text-amber-400 px-2.5">Page 1 of 1</span>
+            <button onclick="changePage(1)" id="next-page-btn" class="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-35 rounded text-xs font-semibold border border-zinc-600 transition flex items-center gap-1 cursor-pointer">
+              Next Page ▶
+            </button>
+          </div>
+
+          <!-- Zoom & Fullscreen Controls -->
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] text-zinc-400">Magnify:</span>
+            <button onclick="adjustFsZoom(-0.15)" class="px-2.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 rounded text-xs font-bold border border-zinc-700">−</button>
+            <span id="fs-zoom-label" class="text-xs font-mono text-amber-400 w-11 text-center">100%</span>
+            <button onclick="adjustFsZoom(0.15)" class="px-2.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 rounded text-xs font-bold border border-zinc-700">+</button>
+            <button onclick="resetFsZoom()" class="text-[11px] text-zinc-400 hover:text-white underline ml-1">Reset</button>
+            <button onclick="toggleFullScreen()" id="fs-toggle-btn" class="ml-2 px-3 py-1 bg-amber-600 hover:bg-amber-500 text-zinc-950 text-xs font-semibold rounded-lg transition cursor-pointer">
+              ⛶ Full Screen
+            </button>
+          </div>
+        </div>
+
+        <div id="score-container" class="w-full flex justify-center overflow-x-auto">
+          <!-- SVG injected here -->
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL 1: About This App -->
+  <div id="about-modal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl text-zinc-200">
+      <div class="flex items-center justify-between border-b border-zinc-800 pb-3 mb-4">
+        <h2 class="text-lg font-semibold text-amber-500 flex items-center gap-2">
+          <span class="jp-serif text-xl">尺八譜</span> About This App
+        </h2>
+        <button onclick="toggleModal('about-modal', false)" class="text-zinc-400 hover:text-white text-lg">✕</button>
+      </div>
+      <div class="space-y-3 text-xs leading-relaxed text-zinc-300">
+        <p>
+          This application translates Western monophonic notation into traditional vertical Japanese shakuhachi notation, supporting both <strong>Chikumeisha (Kinko-ryu)</strong> <em>hyōshi</em> beat markings and authentic <strong>Tozan-ryu</strong> cellular metric grids.
+        </p>
+        <h3 class="font-semibold text-zinc-100 pt-1">How to Use:</h3>
+        <ul class="list-disc pl-5 space-y-1.5 text-zinc-300">
+          <li><strong>Uniform Multi-Page Scores:</strong> Complete sequences and chants are automatically formatted into balanced 8-column pages. Use the <strong>◀ Prev / Next Page ▶</strong> buttons (or Left/Right keyboard arrows) in both normal and Full Screen views.</li>
+          <li><strong>Select Your School & Flute:</strong> Choose between Kinko-ryu and Tozan-ryu, and select your shakuhachi size (defaulting to standard 1.8 in D).</li>
+          <li><strong>Kinko-ryu vs. Tozan-ryu:</strong>
+            <ul class="list-circle pl-4 mt-1 space-y-1 text-zinc-400">
+              <li><strong class="text-zinc-200">Kinko-ryu (Chikumeisha):</strong> Uses ● <em>Omote-ma</em> (right downbeat dots), ○ <em>Ura-ma</em> (left upbeat circles), and vertical sustain/beam lines.</li>
+              <li><strong class="text-zinc-200">Tozan-ryu:</strong> Uses a continuous boxed measure grid with time signature headers (<code>4/4</code>, <code>2/4</code>, <code>3/4</code>), horizontal sustain dashes (<code>ー</code>), left-hand eighth-note beams, and parenthetical register marks <code>(乙)</code> / <code>(甲)</code>.</li>
+            </ul>
+          </li>
+        </ul>
+        <div class="mt-5 pt-4 border-t border-zinc-800 bg-zinc-950/70 p-4 rounded-xl text-center">
+          <p class="text-xs font-medium text-zinc-200 mb-2">
+            Built by Adrian. Enjoy it for free, or say thank you using:
+          </p>
+          <a href="https://revolut.me/adi2410355" target="_blank" rel="noopener noreferrer" class="inline-block px-4 py-2 bg-amber-600 hover:bg-amber-500 text-zinc-950 font-semibold text-xs rounded-lg transition">
+            revolut.me/adi2410355
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: Submit to Public Repository -->
+  <div id="submit-modal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl text-zinc-200">
+      <div class="flex items-center justify-between border-b border-zinc-800 pb-3 mb-4">
+        <h2 class="text-base font-semibold text-amber-500">Submit Score to Public Repository</h2>
+        <button onclick="toggleModal('submit-modal', false)" class="text-zinc-400 hover:text-white text-lg">✕</button>
+      </div>
+      <p class="text-xs text-zinc-400 mb-4">
+        To keep the shared library clean and accurate, all public submissions go through a quick verification check before appearing in everyone's global dropdown.
+      </p>
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block text-zinc-400 mb-1">Piece Title *</label>
+          <input type="text" id="sub-title" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-zinc-100">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-zinc-400 mb-1">Composer / Tradition</label>
+            <input type="text" id="sub-composer" placeholder="e.g. Hildegard von Bingen" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-zinc-100">
+          </div>
+          <div>
+            <label class="block text-zinc-400 mb-1">Your Name / Attribution</label>
+            <input type="text" id="sub-contributor" placeholder="Optional" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-zinc-100">
+          </div>
+        </div>
+        <div id="sub-status" class="hidden p-3 rounded bg-emerald-950/60 border border-emerald-700 text-emerald-300 text-xs"></div>
+        <div class="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
+          <button onclick="copyRepositoryJSON()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded border border-zinc-700 transition">
+            Copy JSON for GitHub (`library.json`)
+          </button>
+          <button onclick="submitForVerification()" class="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-zinc-950 font-semibold rounded transition">
+            Submit for Verification
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- CLEAN WESTERN-TO-SHAKUHACHI REPOSITORY (Continuous Uniform Pagination, Standard 1.8 D) ---
+    const DEFAULT_REPOSITORY = [
+      {
+        id: "columba-aspexit-complete",
+        title: "Columba Aspexit — Hildegard von Bingen",
+        flute: "62",
+        transpose: 12,
+        timesig: "4",
+        abc: `A, C D E G D E D C D D C E D C D2 z A, _B, C A, G, A, C D E D C E G E D E2 z A, C D E E D E G E D E G A c c B c A G E2 z G A G A G E D E C D D C _B, C A, G, A, A,2 z A, C D E G D E D C D D C _B, A, G,2 z A, C D C A, C D E D C D E G E D E C D D2 z A, C D E E D E D C D E G A c c B c A G E2 z G A G A G E D E C D E D C _B, C A, G, A, A,2 z A, C D E G E D E C D E E2 z E G A c B c A G E D E2 z E G E D C D C A, C D2 z D C D E G E D C D E G A G E D E G E D C D E2 z E G A G E A B c A G E G A G D E D2 z G A E D C D E D C A,2 z C D C A, G, A, C D C A, A,2 z A, C D E G E D E G A2 z G A c c B A G E G A G D E2 z C D E G F E D C _B, C2 z C G, A, C D E F E D E G A G E D E D2 z E G A c B A G E G A G D E2 z D C D E C D C A, _B, C A, G, A, C D C A, A,2 z A, G, A, C D E D C A, A,2 z A, C D E G E D E G A c d c B A G E G A G D E2 z E G A G E D E G A G E D C D E2 z A, C D C A, C D E G E D E C D D C _B, C A, G, A, A,2 z A, G, A, C D C A, C D A,2 z E G A G E D E G A c B A G E G A G D E D2 z G A E D C D E C A,2 z C D E F E D C D E G E D E C D D C _B, C A, G, A, A,2 z A, E D E G E D E G A c B A G E G A G E D E2 z E D C D E G E D C A, C D E G E D E G A G D E2 z E G A c B A G E D C D E G E D C D E2 z E G A d c B c A G E G A G D E2 z G F E D C _B, C A, G, A,2 z A, E D E G E D E G A c B A G E G A G E D E2 z E D C D E C A, C D E G E D E G A G E D E2 z E G A c B A G E D C D E G E D C D E2 z E G A c B c A G E D C D E G E D C _B, C A, G, A, A,2 z A, C D E D C D E G E D E G A c B A G E G A G E D E2 z E D E G E D C D E G A c B A G E D C D E2 z G F E D C D C A, _B, C A, G, A, C D C A, A,4`
+      },
+      {
+        id: "dies-irae-complete",
+        title: "Dies Irae — 13th c. Dorian Sequence",
+        flute: "62",
+        transpose: 0,
+        timesig: "4",
+        abc: `F E F D E C D2 z F F G F E D C E F D2 z F E F D E C D2 z F F G F E D C E F D2 z A G A F G E F D2 z F E G F E D C D2 z A G A F G E F D2 z F E G F E D C D4`
+      },
+      {
+        id: "veni-creator-spiritus",
+        title: "Veni Creator Spiritus — Gregorian Mode VIII",
+        flute: "62",
+        transpose: 0,
+        timesig: "4",
+        abc: "D E D C D E D G A2 z A G A B A G F G2 z G A F E D E F G F E D2 z D E F D C D F E D4"
+      }
+    ];
+
+    let fullRepository = [];
+    let currentPadOctave = 4;
+    let currentPadDur = '1';
+    let fsZoom = 1.0;
+    let currentPage = 0;
+    let totalPages = 1;
+
+    async function initRepository(selectIdAfter) {
+      fullRepository = [...DEFAULT_REPOSITORY];
+
+      try {
+        const res = await fetch('./library.json', { cache: 'no-store' });
+        if (res.ok) {
+          const externalItems = await res.json();
+          if (Array.isArray(externalItems)) {
+            externalItems.forEach(item => {
+              if (!fullRepository.some(r => r.id === item.id)) fullRepository.push(item);
+            });
+          }
+        }
+      } catch (e) {}
+
+      const localSaved = JSON.parse(localStorage.getItem('shakuhachi_user_repo') || '[]');
+      localSaved.forEach(item => {
+        if (!fullRepository.some(r => r.id === item.id)) {
+          fullRepository.push({ ...item, isLocal: true });
+        }
+      });
+
+      const targetId = selectIdAfter || fullRepository[0].id;
+      populateRepoDropdown(targetId);
+      loadFromRepository(targetId);
+    }
+
+    function populateRepoDropdown(selectedId) {
+      const sel = document.getElementById('repo-select');
+      sel.innerHTML = '';
+      fullRepository.forEach(item => {
+        const opt = document.createElement('option');
+        opt.value = item.id;
+        const badge = item.isLocal ? ' ★ [Saved in Browser]' : '';
+        opt.textContent = `${item.title}${badge}`;
+        if (selectedId && item.id === selectedId) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+
+    function loadFromRepository(id) {
+      const item = fullRepository.find(r => r.id === id);
+      if (!item) return;
+      document.getElementById('flute-select').value = item.flute || "62";
+      document.getElementById('transpose-input').value = item.transpose !== undefined ? item.transpose : 0;
+      if (item.timesig) document.getElementById('timesig-select').value = item.timesig;
+      document.getElementById('score-title').value = item.title;
+      document.getElementById('note-input').value = item.abc;
+
+      const delBtn = document.getElementById('delete-local-btn');
+      if (item.isLocal) {
+        delBtn.classList.remove('hidden');
+      } else {
+        delBtn.classList.add('hidden');
+      }
+
+      currentPage = 0;
+      renderScore();
+    }
+
+    function saveToLocalLibrary() {
+      const title = document.getElementById('score-title').value.trim() || 'Custom Score';
+      const flute = document.getElementById('flute-select').value;
+      const transpose = parseInt(document.getElementById('transpose-input').value || '0', 10);
+      const timesig = document.getElementById('timesig-select').value;
+      const abc = document.getElementById('note-input').value.trim();
+      if (!abc) return alert('Please enter or upload some notes first.');
+
+      const newItem = {
+        id: 'local-' + Date.now(),
+        title,
+        flute,
+        transpose,
+        timesig,
+        abc,
+        isLocal: true
+      };
+      const localSaved = JSON.parse(localStorage.getItem('shakuhachi_user_repo') || '[]');
+      localSaved.push(newItem);
+      localStorage.setItem('shakuhachi_user_repo', JSON.stringify(localSaved));
+
+      fullRepository.push(newItem);
+      populateRepoDropdown(newItem.id);
+      loadFromRepository(newItem.id);
+    }
+
+    function deleteFromLocalLibrary() {
+      const sel = document.getElementById('repo-select');
+      const currentId = sel.value;
+      const item = fullRepository.find(r => r.id === currentId);
+      if (!item || !item.isLocal) return;
+
+      if (!confirm(`Remove "${item.title}" from your local browser library?`)) return;
+
+      const localSaved = JSON.parse(localStorage.getItem('shakuhachi_user_repo') || '[]');
+      const updatedLocal = localSaved.filter(r => r.id !== currentId);
+      localStorage.setItem('shakuhachi_user_repo', JSON.stringify(updatedLocal));
+
+      initRepository(DEFAULT_REPOSITORY[0].id);
+    }
+
+    // --- PAGE NAVIGATION ---
+    function changePage(delta) {
+      const next = currentPage + delta;
+      if (next >= 0 && next < totalPages) {
+        currentPage = next;
+        renderScore();
+      }
+    }
+
+    // Keyboard arrow navigation for turning pages on a music stand (works in Normal & Full Screen)
+    window.addEventListener('keydown', (e) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+      if (e.key === 'ArrowRight') changePage(1);
+      if (e.key === 'ArrowLeft') changePage(-1);
+    });
+
+    // --- FULLSCREEN & ZOOM CONTROLS ---
+    function toggleFullScreen() {
+      const wrapper = document.getElementById('score-wrapper');
+      const btn = document.getElementById('fs-toggle-btn');
+      if (!document.fullscreenElement) {
+        wrapper.requestFullscreen().catch(err => alert(`Full screen error: ${err.message}`));
+        btn.textContent = '✕ Exit Full Screen';
+      } else {
+        document.exitFullscreen();
+        btn.textContent = '⛶ Full Screen';
+      }
+    }
+
+    document.addEventListener('fullscreenchange', () => {
+      const btn = document.getElementById('fs-toggle-btn');
+      if (btn) btn.textContent = document.fullscreenElement ? '✕ Exit Full Screen' : '⛶ Full Screen';
+      applyFsZoom();
+    });
+
+    function adjustFsZoom(delta) {
+      fsZoom = Math.min(2.5, Math.max(0.6, Math.round((fsZoom + delta) * 100) / 100));
+      applyFsZoom();
+    }
+
+    function resetFsZoom() {
+      fsZoom = 1.0;
+      applyFsZoom();
+    }
+
+    function applyFsZoom() {
+      const wrapper = document.getElementById('score-wrapper');
+      wrapper.style.setProperty('--fs-zoom', fsZoom);
+      const svgEl = document.getElementById('shakuhachi-svg');
+      if (svgEl) {
+        if (!document.fullscreenElement) {
+          svgEl.style.transform = `scale(${fsZoom})`;
+          svgEl.style.transformOrigin = 'top center';
+        } else {
+          svgEl.style.transform = 'none';
+        }
+      }
+      document.getElementById('fs-zoom-label').textContent = `${Math.round(fsZoom * 100)}%`;
+    }
+
+    // --- VERIFICATION & SUBMISSION HANDLERS ---
+    function buildSubmissionObject() {
+      const title = document.getElementById('sub-title').value.trim() || document.getElementById('score-title').value.trim();
+      const composer = document.getElementById('sub-composer').value.trim();
+      const contributor = document.getElementById('sub-contributor').value.trim();
+      const flute = document.getElementById('flute-select').value;
+      const transpose = parseInt(document.getElementById('transpose-input').value || '0', 10);
+      const timesig = document.getElementById('timesig-select').value;
+      const abc = document.getElementById('note-input').value.trim();
+      const fullTitle = composer ? `${title} — ${composer}` : title;
+      return {
+        id: fullTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        title: fullTitle,
+        contributor,
+        flute,
+        transpose,
+        timesig,
+        abc
+      };
+    }
+
+    function copyRepositoryJSON() {
+      const obj = buildSubmissionObject();
+      const jsonStr = JSON.stringify(obj, null, 2);
+      navigator.clipboard.writeText(jsonStr);
+      const status = document.getElementById('sub-status');
+      status.classList.remove('hidden');
+      status.textContent = 'Copied JSON entry to clipboard! Paste this object into your GitHub library.json file to publish globally.';
+    }
+
+    async function submitForVerification() {
+      const obj = buildSubmissionObject();
+      const status = document.getElementById('sub-status');
+      status.classList.remove('hidden');
+
+      saveToLocalLibrary();
+
+      const formData = new URLSearchParams();
+      formData.append('form-name', 'repository-submissions');
+      formData.append('title', obj.title);
+      formData.append('composer', document.getElementById('sub-composer').value);
+      formData.append('contributor', obj.contributor);
+      formData.append('flute', obj.flute);
+      formData.append('abc_data', obj.abc);
+      formData.append('json_entry', JSON.stringify(obj, null, 2));
+
+      try {
+        await fetch('/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: formData.toString()
+        });
+        status.textContent = 'Submitted for verification! Once reviewed by the maintainer, it will appear in the global archive. It has also been saved to your local browser library.';
+      } catch (err) {
+        status.textContent = 'Saved to your local browser library! (Note: Live verification queue requires active Netlify hosting; use "Copy JSON" if testing offline).';
+      }
+    }
+
+    function toggleModal(id, show) {
+      const el = document.getElementById(id);
+      if (show && id === 'submit-modal') {
+        document.getElementById('sub-title').value = document.getElementById('score-title').value;
+        document.getElementById('sub-status').classList.add('hidden');
+      }
+      el.classList.toggle('hidden', !show);
+    }
+
+    // --- PAD CONTROLS ---
+    function setPadOctave(oct) {
+      currentPadOctave = oct;
+      [3,4,5].forEach(o => {
+        const el = document.getElementById('oct-' + o);
+        el.className = (o === oct)
+          ? "px-2 py-0.5 text-xs rounded bg-amber-600 text-zinc-950 font-semibold"
+          : "px-2 py-0.5 text-xs rounded bg-zinc-800 text-zinc-400";
+      });
+    }
+
+    function setPadDur(dur) {
+      currentPadDur = dur;
+      ['4','2','1','1/2','1/4'].forEach(d => {
+        const el = document.getElementById('dur-' + d);
+        el.className = (d === dur)
+          ? "flex-1 py-1 text-xs rounded bg-amber-600/20 text-amber-400 border border-amber-500/50 font-medium"
+          : "flex-1 py-1 text-xs rounded bg-zinc-800 text-zinc-300 border border-zinc-700";
+      });
+    }
+
+    function appendAbcNote(abcPitch) {
+      const input = document.getElementById('note-input');
+      const durSuffix = currentPadDur === '1' ? '' : currentPadDur;
+      let token = '';
+      if (abcPitch === 'z') {
+        token = `z${durSuffix}`;
+      } else {
+        if (currentPadOctave === 3) token = `${abcPitch},${durSuffix}`;
+        else if (currentPadOctave === 4) token = `${abcPitch}${durSuffix}`;
+        else if (currentPadOctave === 5) token = `${abcPitch.toLowerCase()}${durSuffix}`;
+      }
+      input.value = (input.value.trim() + ' ' + token).trim();
+      renderScore();
+    }
+
+    // --- SHAKUHACHI SEMITONE MAPPING TABLE ---
+    const SHAKUHACHI_MAP = {
+      0:  { kana: 'ロ', meri: '',    reg: '乙' },
+      1:  { kana: 'ツ', meri: '大メ', reg: '乙' },
+      2:  { kana: 'ツ', meri: '中メ', reg: '乙' },
+      3:  { kana: 'ツ', meri: '',    reg: '乙' },
+      4:  { kana: 'レ', meri: 'メ',   reg: '乙' },
+      5:  { kana: 'レ', meri: '',    reg: '乙' },
+      6:  { kana: 'チ', meri: 'メ',   reg: '乙' },
+      7:  { kana: 'チ', meri: '',    reg: '乙' },
+      8:  { kana: 'リ', meri: 'メ',   reg: '乙' },
+      9:  { kana: 'リ', meri: '中メ', reg: '乙' },
+      10: { kana: 'リ', meri: '',    reg: '乙' },
+      11: { kana: 'ハ', meri: 'メ',   reg: '乙' },
+      12: { kana: 'ロ', meri: '',    reg: '甲' },
+      13: { kana: 'ツ', meri: '大メ', reg: '甲' },
+      14: { kana: 'ツ', meri: '中メ', reg: '甲' },
+      15: { kana: 'ツ', meri: '',    reg: '甲' },
+      16: { kana: 'レ', meri: 'メ',   reg: '甲' },
+      17: { kana: 'レ', meri: '',    reg: '甲' },
+      18: { kana: 'チ', meri: 'メ',   reg: '甲' },
+      19: { kana: 'チ', meri: '',    reg: '甲' },
+      20: { kana: 'ヒ', meri: 'メ',   reg: '甲' },
+      21: { kana: 'ヒ', meri: '中メ', reg: '甲' },
+      22: { kana: 'ヒ', meri: '',    reg: '甲' },
+      23: { kana: 'ハ', meri: 'メ',   reg: '甲' },
+      24: { kana: 'ハ', meri: '',    reg: '甲' }
+    };
+
+    const PITCH_OFFSETS = {
+      'C': 0, 'C#': 1, 'DB': 1, 'D': 2, 'D#': 3, 'EB': 3,
+      'E': 4, 'F': 5, 'F#': 6, 'GB': 6, 'G': 7, 'G#': 8,
+      'AB': 8, 'A': 9, 'A#': 10, 'BB': 10, 'B': 11
+    };
+
+    function pitchToMidi(noteStr) {
+      const m = noteStr.toUpperCase().match(/^([A-G][#B]?)(-?\d+)$/);
+      if (!m) return null;
+      const semitone = PITCH_OFFSETS[m[1]];
+      const octave = parseInt(m[2], 10);
+      return (octave + 1) * 12 + semitone;
+    }
+
+    function midiToPitchName(midi) {
+      const names = ['C','C#','D','Eb','E','F','F#','G','G#','A','Bb','B'];
+      const oct = Math.floor(midi / 12) - 1;
+      return names[midi % 12] + oct;
+    }
+
+    // --- UNIFIED STREAM PARSER ---
+    function parseStream(rawText) {
+      // Remove any legacy === or [Page:...] tags so the entire piece flows into uniform 8-column pages
+      const cleaned = rawText
+        .replace(/===/g, ' ')
+        .replace(/\[Page:[^\]]*\]/gi, ' ')
+        .trim();
+      if (!cleaned) return [];
+
+      if (/[A-GRa-gr][#b]?\d*:\d/.test(cleaned)) {
+        const tokens = cleaned.split(/\s+/);
+        const events = [];
+        for (const tok of tokens) {
+          if (!tok || tok === '|') continue;
+          const [pitchRaw, beatStr] = tok.split(':');
+          const beats = beatStr ? parseFloat(beatStr) : 1;
+          if (isNaN(beats) || beats <= 0) continue;
+          if (pitchRaw.toUpperCase() === 'R' || pitchRaw.toUpperCase() === 'Z') {
+            events.push({ isRest: true, beats, raw: 'Rest' });
+          } else {
+            const midi = pitchToMidi(pitchRaw);
+            if (midi !== null) events.push({ isRest: false, midi, beats, raw: pitchRaw });
+          }
+        }
+        return events;
+      }
+
+      return parseABC(cleaned);
+    }
+
+    function parseABC(abc) {
+      const lines = abc.split(/\r?\n/).filter(l => !/^[A-Za-z]:/.test(l.trim()) && !l.trim().startsWith('%'));
+      const body = lines.join(' ');
+      const regex = /([_^\=]?[A-Ga-gz])([,']*)(\d*\/?\d*)/g;
+      const events = [];
+      let match;
+      while ((match = regex.exec(body)) !== null) {
+        let [full, noteChar, octMod, lenStr] = match;
+        let beats = 1;
+        if (lenStr) {
+          if (lenStr === '/') beats = 0.5;
+          else if (lenStr.includes('/')) {
+            const [num, den] = lenStr.split('/');
+            beats = (num ? parseFloat(num) : 1) / (den ? parseFloat(den) : 2);
+          } else {
+            beats = parseFloat(lenStr);
+          }
+        }
+        if (noteChar.toLowerCase() === 'z') {
+          events.push({ isRest: true, beats, raw: 'Rest' });
+          continue;
+        }
+        let acc = '';
+        if (noteChar.startsWith('^')) { acc = '#'; noteChar = noteChar.slice(1); }
+        else if (noteChar.startsWith('_')) { acc = 'b'; noteChar = noteChar.slice(1); }
+        else if (noteChar.startsWith('=')) { noteChar = noteChar.slice(1); }
+
+        let octave = (noteChar === noteChar.toLowerCase()) ? 5 : 4;
+        for (const ch of octMod) {
+          if (ch === "'") octave++;
+          if (ch === ",") octave--;
+        }
+        const pitchStr = noteChar.toUpperCase() + acc + octave;
+        const midi = pitchToMidi(pitchStr);
+        if (midi !== null) events.push({ isRest: false, midi, beats, raw: pitchStr });
+      }
+      return events;
+    }
+
+    // --- FILE UPLOAD HANDLER ---
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const content = e.target.result;
+        if (file.name.endsWith('.xml') || file.name.endsWith('.musicxml')) {
+          const parsedAbc = parseMusicXMLToAbc(content);
+          document.getElementById('note-input').value = parsedAbc;
+        } else {
+          document.getElementById('note-input').value = content;
+        }
+        currentPage = 0;
+        renderScore();
+      };
+      reader.readAsText(file);
+    }
+
+    function parseMusicXMLToAbc(xmlStr) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(xmlStr, "application/xml");
+      const titleEl = doc.querySelector("work-title, movement-title");
+      if (titleEl && titleEl.textContent.trim()) {
+        document.getElementById('score-title').value = titleEl.textContent.trim();
+      }
+      let divisions = 1;
+      const notes = doc.querySelectorAll("note");
+      const out = [];
+
+      notes.forEach(n => {
+        if (n.querySelector("chord")) return;
+        const divEl = n.parentElement.querySelector("attributes > divisions");
+        if (divEl) divisions = parseFloat(divEl.textContent) || divisions;
+
+        const durEl = n.querySelector("duration");
+        const dur = durEl ? (parseFloat(durEl.textContent) / divisions) : 1;
+        const beats = Math.round(dur * 100) / 100;
+
+        if (n.querySelector("rest")) {
+          out.push(`R:${beats}`);
+        } else {
+          const step = n.querySelector("pitch > step")?.textContent || 'D';
+          const oct = n.querySelector("pitch > octave")?.textContent || '4';
+          const alter = parseInt(n.querySelector("pitch > alter")?.textContent || '0', 10);
+          const acc = alter === 1 ? '#' : (alter === -1 ? 'b' : '');
+          out.push(`${step}${acc}${oct}:${beats}`);
+        }
+      });
+      return out.join(' ');
+    }
+
+    // --- SCORE RENDERER (SVG) ---
+    function renderScore() {
+      const school = document.getElementById('school-select').value;
+      const fluteRootMidi = parseInt(document.getElementById('flute-select').value, 10);
+      const transpose = parseInt(document.getElementById('transpose-input').value || '0', 10);
+      const beatsPerMeasure = parseInt(document.getElementById('timesig-select').value || '4', 10);
+      const sustainStyle = document.getElementById('sustain-style').value;
+      const showHints = document.getElementById('show-hints').value === 'yes';
+      const title = document.getElementById('score-title').value || 'Untitled';
+      const rawInput = document.getElementById('note-input').value;
+
+      const events = parseStream(rawInput);
+
+      const COLS_PER_PAGE = 8;
+      const BEATS_PER_COL = beatsPerMeasure === 3 ? 9 : 8;
+
+      const translated = events.map(ev => {
+        if (ev.isRest) {
+          return { ...ev, kana: '◯', meri: '', reg: '', outOfRange: false };
+        }
+        const effectiveMidi = ev.midi + transpose;
+        const soundedPitch = midiToPitchName(effectiveMidi);
+        const offset = effectiveMidi - fluteRootMidi;
+        const mapping = SHAKUHACHI_MAP[offset];
+        if (!mapping) {
+          return { ...ev, kana: '？', meri: '', reg: '', raw: soundedPitch, outOfRange: true, effectiveMidi };
+        }
+        return { ...ev, ...mapping, raw: soundedPitch, outOfRange: false, effectiveMidi };
+      });
+
+      const slots = [];
+      let currentBeat = 0;
+      let prevReg = null;
+
+      translated.forEach(ev => {
+        const showReg = (!ev.isRest && ev.reg && ev.reg !== prevReg);
+        if (!ev.isRest && ev.reg) prevReg = ev.reg;
+
+        if (ev.beats >= 1) {
+          slots.push({
+            type: 'attack',
+            isRest: ev.isRest,
+            kana: ev.kana,
+            meri: ev.meri,
+            reg: showReg ? ev.reg : '',
+            raw: ev.raw,
+            beatPos: currentBeat,
+            duration: 1,
+            subdiv: 1,
+            outOfRange: ev.outOfRange
+          });
+          currentBeat += 1;
+          let rem = ev.beats - 1;
+          while (rem >= 0.25) {
+            const step = rem >= 1 ? 1 : (rem >= 0.5 ? 0.5 : 0.25);
+            slots.push({
+              type: 'sustain',
+              isRest: ev.isRest,
+              kana: '',
+              meri: '',
+              reg: '',
+              raw: '',
+              beatPos: currentBeat,
+              duration: step,
+              subdiv: step < 1 ? 2 : 1
+            });
+            currentBeat += step;
+            rem -= step;
+          }
+        } else {
+          slots.push({
+            type: 'attack',
+            isRest: ev.isRest,
+            kana: ev.kana,
+            meri: ev.meri,
+            reg: showReg ? ev.reg : '',
+            raw: ev.raw,
+            beatPos: currentBeat,
+            duration: ev.beats,
+            subdiv: ev.beats <= 0.25 ? 4 : 2,
+            outOfRange: ev.outOfRange
+          });
+          currentBeat += ev.beats;
+        }
+      });
+
+      // Group slots into uniform vertical columns
+      const allCols = [];
+      let currentCol = [];
+      let colBeatSum = 0;
+
+      slots.forEach(s => {
+        if (colBeatSum + s.duration > BEATS_PER_COL + 0.01 && currentCol.length > 0) {
+          allCols.push(currentCol);
+          currentCol = [];
+          colBeatSum = 0;
+        }
+        currentCol.push(s);
+        colBeatSum += s.duration;
+      });
+      if (currentCol.length > 0) allCols.push(currentCol);
+
+      // Uniformly paginate into 8-column pages
+      const allPages = [];
+      if (allCols.length === 0) {
+        allPages.push([]);
+      } else {
+        for (let i = 0; i < allCols.length; i += COLS_PER_PAGE) {
+          allPages.push(allCols.slice(i, i + COLS_PER_PAGE));
+        }
+      }
+
+      totalPages = Math.max(1, allPages.length);
+      if (currentPage >= totalPages) currentPage = totalPages - 1;
+
+      const columns = allPages[currentPage] || [];
+
+      // Update Page Flipper UI
+      document.getElementById('page-indicator').textContent = `Page ${currentPage + 1} of ${totalPages}`;
+      document.getElementById('prev-page-btn').disabled = (currentPage === 0);
+      document.getElementById('next-page-btn').disabled = (currentPage >= totalPages - 1);
+
+      // SVG Fixed Uniform Page Dimensions (Always 8-columns wide so pages never jump in size)
+      const colWidth = school === 'tozan' ? 78 : 84;
+      const svgWidth = (COLS_PER_PAGE * colWidth) + 84;
+      const beatPx = 52;
+      const headerBottomY = 80;
+      const topMargin = 96;
+      const gridHeight = BEATS_PER_COL * beatPx;
+      const svgHeight = topMargin + gridHeight + 65;
+
+      const fluteLabel = document.getElementById('flute-select').selectedOptions[0].text;
+      const schoolLabel = school === 'kinko' ? '琴古流 (Chikumeisha Hyōshi)' : `都山流 (Tozan-ryu ${beatsPerMeasure}/4 Metric Grid)`;
+      const transLabel = transpose !== 0 ? ` • Transposed ${transpose > 0 ? '+'+transpose : transpose} st` : '';
+
+      let svg = `<svg id="shakuhachi-svg" xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="background-color:#fcfaf2; font-family:'Noto Serif JP', serif;">`;
+
+      // Outer Frame
+      svg += `<rect x="18" y="18" width="${svgWidth - 36}" height="${svgHeight - 36}" fill="none" stroke="#27272a" stroke-width="2"/>`;
+      svg += `<rect x="22" y="22" width="${svgWidth - 44}" height="${svgHeight - 44}" fill="none" stroke="#27272a" stroke-width="0.7"/>`;
+
+      // Two-Line Header with Overflow Protection (Never clips outside the border!)
+      const maxTitleWidth = svgWidth - 76;
+      const titleAttrs = title.length > 52 ? `textLength="${maxTitleWidth}" lengthAdjust="spacingAndGlyphs"` : '';
+      svg += `<text x="36" y="46" font-size="15.5" font-weight="700" fill="#18181b" ${titleAttrs}>${escapeXml(title)}</text>`;
+      svg += `<text x="36" y="66" font-size="11" fill="#52525b" font-family="Inter, sans-serif">${schoolLabel} • ${fluteLabel}${transLabel} • Page ${currentPage + 1} of ${totalPages}</text>`;
+      svg += `<line x1="22" y1="${headerBottomY}" x2="${svgWidth - 22}" y2="${headerBottomY}" stroke="#27272a" stroke-width="1"/>`;
+
+      const rightStart = svgWidth - 42 - (colWidth / 2);
+
+      // If Tozan-ryu, draw the contiguous outer grid table frame for active columns
+      if (school === 'tozan' && columns.length > 0) {
+        const totalGridW = columns.length * colWidth;
+        const gridLeftX = (svgWidth - 42) - totalGridW;
+        svg += `<rect x="${gridLeftX}" y="${topMargin}" width="${totalGridW}" height="${gridHeight}" fill="none" stroke="#18181b" stroke-width="1.6"/>`;
+      }
+
+      // Draw Columns (Right to Left)
+      columns.forEach((col, colIdx) => {
+        const colCenterX = rightStart - (colIdx * colWidth);
+        const colLeftX = colCenterX - (colWidth / 2);
+        const colRightX = colCenterX + (colWidth / 2);
+        let yCursor = topMargin;
+
+        if (school === 'kinko') {
+          svg += `<line x1="${colLeftX}" y1="${headerBottomY}" x2="${colLeftX}" y2="${svgHeight - 22}" stroke="#e4e4d8" stroke-width="1"/>`;
+        } else {
+          svg += `<line x1="${colLeftX}" y1="${topMargin}" x2="${colLeftX}" y2="${topMargin + gridHeight}" stroke="#18181b" stroke-width="1.2"/>`;
+          for (let b = beatsPerMeasure; b < BEATS_PER_COL; b += beatsPerMeasure) {
+            const barY = topMargin + (b * beatPx);
+            svg += `<line x1="${colLeftX}" y1="${barY}" x2="${colRightX}" y2="${barY}" stroke="#18181b" stroke-width="1.3"/>`;
+          }
+          if (colIdx === 0 && currentPage === 0) {
+            svg += `<text x="${colRightX - 8}" y="${topMargin - 5}" font-size="10" font-weight="700" fill="#18181b" text-anchor="end">${beatsPerMeasure}/4  [中庸]</text>`;
+          }
+          if (colIdx === columns.length - 1 && currentPage === totalPages - 1) {
+            const bottomY = topMargin + gridHeight;
+            svg += `<line x1="${colLeftX}" y1="${bottomY - 4}" x2="${colRightX}" y2="${bottomY - 4}" stroke="#18181b" stroke-width="1.2"/>`;
+            svg += `<line x1="${colLeftX}" y1="${bottomY}" x2="${colRightX}" y2="${bottomY}" stroke="#18181b" stroke-width="2.4"/>`;
+          }
+        }
+
+        col.forEach((slot) => {
+          const slotHeight = slot.duration * beatPx;
+          const textY = yCursor + 30;
+          const isOnBeat = Math.abs((slot.beatPos % 1)) < 0.01;
+          const isUpBeat = Math.abs((slot.beatPos % 1) - 0.5) < 0.01;
+
+          if (school === 'kinko') {
+            if (slot.reg) {
+              svg += `<text x="${colCenterX + 22}" y="${textY - 10}" font-size="11" font-weight="700" fill="#b45309" text-anchor="middle">${slot.reg}</text>`;
+            }
+
+            if (slot.type === 'sustain') {
+              if (!slot.isRest && sustainStyle === 'line') {
+                svg += `<line x1="${colCenterX}" y1="${textY - 15}" x2="${colCenterX}" y2="${yCursor + slotHeight - 6}" stroke="#18181b" stroke-width="2.2" stroke-linecap="round"/>`;
+              }
+            } else {
+              const fontSize = slot.subdiv >= 4 ? 15 : (slot.subdiv === 2 ? 19 : 23);
+              const fillCol = slot.outOfRange ? '#dc2626' : '#18181b';
+              svg += `<text x="${colCenterX}" y="${textY}" font-size="${fontSize}" font-weight="600" fill="${fillCol}" text-anchor="middle">${slot.kana}</text>`;
+            }
+
+            if (slot.meri) {
+              svg += `<text x="${colCenterX - 18}" y="${textY + 4}" font-size="9.5" font-weight="700" fill="#9a3412" text-anchor="middle">${slot.meri}</text>`;
+            }
+
+            if (showHints && slot.raw && slot.raw !== 'Rest') {
+              svg += `<text x="${colCenterX - 27}" y="${textY - 4}" font-size="8" font-family="Inter, sans-serif" fill="#a1a1aa" text-anchor="end">${slot.raw}</text>`;
+            }
+
+            if (isOnBeat) {
+              svg += `<circle cx="${colCenterX + 19}" cy="${textY - 6}" r="3" fill="#18181b"/>`;
+            } else if (isUpBeat) {
+              svg += `<circle cx="${colCenterX - 17}" cy="${textY - 6}" r="2.8" fill="none" stroke="#18181b" stroke-width="1.3"/>`;
+            }
+
+            if (slot.subdiv >= 2 && slot.type === 'attack') {
+              svg += `<line x1="${colCenterX + 13}" y1="${textY - 15}" x2="${colCenterX + 13}" y2="${yCursor + slotHeight - 5}" stroke="#18181b" stroke-width="1.4"/>`;
+              if (slot.subdiv >= 4) {
+                svg += `<line x1="${colCenterX + 16}" y1="${textY - 15}" x2="${colCenterX + 16}" y2="${yCursor + slotHeight - 5}" stroke="#18181b" stroke-width="1.4"/>`;
+              }
+            }
+
+          } else {
+            if (slot.reg) {
+              svg += `<text x="${colCenterX + 21}" y="${textY - 2}" font-size="9.5" font-weight="600" fill="#18181b" text-anchor="middle">(${slot.reg})</text>`;
+            }
+
+            if (slot.type === 'sustain') {
+              if (!slot.isRest) {
+                const dashY = yCursor + (slotHeight / 2);
+                svg += `<line x1="${colCenterX - 7}" y1="${dashY}" x2="${colCenterX + 7}" y2="${dashY}" stroke="#18181b" stroke-width="2" stroke-linecap="round"/>`;
+                if (slot.duration < 1) {
+                  svg += `<circle cx="${colCenterX}" cy="${dashY + 8}" r="2" fill="#18181b"/>`;
+                }
+              }
+            } else {
+              const fontSize = slot.subdiv >= 4 ? 15 : (slot.subdiv === 2 ? 18 : 22);
+              const fillCol = slot.outOfRange ? '#dc2626' : '#18181b';
+              svg += `<text x="${colCenterX}" y="${textY}" font-size="${fontSize}" font-weight="600" fill="${fillCol}" text-anchor="middle">${slot.kana}</text>`;
+            }
+
+            if (slot.meri) {
+              svg += `<text x="${colCenterX - 18}" y="${textY - 8}" font-size="8.5" font-weight="700" fill="#9a3412" text-anchor="middle">${slot.meri}</text>`;
+            }
+
+            if (slot.subdiv >= 2) {
+              svg += `<line x1="${colCenterX - 14}" y1="${yCursor + 6}" x2="${colCenterX - 14}" y2="${yCursor + slotHeight + 4}" stroke="#18181b" stroke-width="1.5"/>`;
+              if (slot.subdiv >= 4) {
+                svg += `<line x1="${colCenterX - 17}" y1="${yCursor + 6}" x2="${colCenterX - 17}" y2="${yCursor + slotHeight + 4}" stroke="#18181b" stroke-width="1.5"/>`;
+              }
+            }
+
+            if (showHints && slot.raw && slot.raw !== 'Rest') {
+              svg += `<text x="${colLeftX + 3}" y="${textY - 4}" font-size="7.5" font-family="Inter, sans-serif" fill="#a1a1aa" text-anchor="start">${slot.raw}</text>`;
+            }
+          }
+
+          yCursor += slotHeight;
+        });
+      });
+
+      // Legend Footer
+      const legendText = school === 'kinko'
+        ? "Kinko-ryu Legend: ● Omote-ma (Downbeat, Right)  ○ Ura-ma (Upbeat, Left)  ｜ Sustain / Subdivision  ◯ Rest (Ma)  乙 Otsu (Low)  甲 Kan (High)"
+        : "Tozan-ryu Legend: Solid Box = 1 Measure (4/4, 2/4, 3/4)  ー Sustained Beat  Left Vertical Bar = Quaver (1/8) Beam  (乙)/(甲) Register";
+      svg += `<text x="36" y="${svgHeight - 28}" font-size="9.5" font-family="Inter, sans-serif" fill="#71717a">${legendText}</text>`;
+      svg += `</svg>`;
+
+      document.getElementById('score-container').innerHTML = svg;
+      applyFsZoom();
+    }
+
+    function escapeXml(unsafe) {
+      return unsafe.replace(/[<>&'"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'}[c]));
+    }
+
+    function downloadSVG() {
+      const svgEl = document.getElementById('shakuhachi-svg');
+      if (!svgEl) return;
+      const serializer = new XMLSerializer();
+      const source = serializer.serializeToString(svgEl);
+      const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(document.getElementById('score-title').value || 'shakuhachi-score').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-page-${currentPage + 1}.svg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => initRepository());
+  </script>
+</body>
+</html>
