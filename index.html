@@ -400,7 +400,8 @@
               <li><strong class="text-zinc-200">Tozan-ryu:</strong> Uses a continuous boxed measure grid with time
                 signature headers (<code>4/4</code>, <code>2/4</code>, <code>3/4</code>), horizontal sustain dashes
                 (<code>ー</code>), left-hand eighth-note beams, and parenthetical register marks <code>(乙)</code> /
-                <code>(甲)</code>.</li>
+                <code>(甲)</code>.
+              </li>
             </ul>
           </li>
         </ul>
@@ -503,20 +504,27 @@
       fullRepository = [...DEFAULT_REPOSITORY];
 
       try {
-        const res = await fetch('./library.json', { cache: 'no-store' });
+        // Fetch verified submissions live from our Netlify Serverless Function
+        const res = await fetch('/.netlify/functions/get-library', { cache: 'no-store' });
         if (res.ok) {
-          const externalItems = await res.json();
-          if (Array.isArray(externalItems)) {
-            externalItems.forEach(item => {
-              if (!fullRepository.some(r => r.id === item.id)) fullRepository.push(item);
+          const verifiedItems = await res.json();
+          if (Array.isArray(verifiedItems)) {
+            verifiedItems.forEach(item => {
+              if (!fullRepository.some(r => r.id === item.id || r.title === item.title)) {
+                fullRepository.push(item);
+              }
             });
           }
         }
       } catch (e) { }
 
+      // Merge user's locally saved scores ONLY if they aren't already in the verified global list
       const localSaved = JSON.parse(localStorage.getItem('shakuhachi_user_repo') || '[]');
       localSaved.forEach(item => {
-        if (!fullRepository.some(r => r.id === item.id)) {
+        const alreadyGlobal = fullRepository.some(
+          r => r.id === item.id || r.title.trim().toLowerCase() === item.title.trim().toLowerCase()
+        );
+        if (!alreadyGlobal) {
           fullRepository.push({ ...item, isLocal: true });
         }
       });
@@ -525,6 +533,7 @@
       populateRepoDropdown(targetId);
       loadFromRepository(targetId);
     }
+
 
     function populateRepoDropdown(selectedId) {
       const sel = document.getElementById('repo-select');
