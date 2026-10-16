@@ -499,24 +499,31 @@
     let currentPage = 0;
     let totalPages = 1;
 
-    async function initRepository(selectIdAfter) {
+        async function initRepository(selectIdAfter) {
       fullRepository = [...DEFAULT_REPOSITORY];
 
       try {
-        const res = await fetch('./library.json', { cache: 'no-store' });
+        // Fetch verified submissions live from our Netlify Serverless Function
+        const res = await fetch('/.netlify/functions/get-library', { cache: 'no-store' });
         if (res.ok) {
-          const externalItems = await res.json();
-          if (Array.isArray(externalItems)) {
-            externalItems.forEach(item => {
-              if (!fullRepository.some(r => r.id === item.id)) fullRepository.push(item);
+          const verifiedItems = await res.json();
+          if (Array.isArray(verifiedItems)) {
+            verifiedItems.forEach(item => {
+              if (!fullRepository.some(r => r.id === item.id || r.title === item.title)) {
+                fullRepository.push(item);
+              }
             });
           }
         }
-      } catch (e) { }
+      } catch (e) {}
 
+      // Merge user's locally saved scores ONLY if they aren't already in the verified global list
       const localSaved = JSON.parse(localStorage.getItem('shakuhachi_user_repo') || '[]');
       localSaved.forEach(item => {
-        if (!fullRepository.some(r => r.id === item.id)) {
+        const alreadyGlobal = fullRepository.some(
+          r => r.id === item.id || r.title.trim().toLowerCase() === item.title.trim().toLowerCase()
+        );
+        if (!alreadyGlobal) {
           fullRepository.push({ ...item, isLocal: true });
         }
       });
