@@ -208,8 +208,8 @@
           <label class="block text-xs font-medium text-zinc-400 mb-1">Kinko Sustain</label>
           <select id="sustain-style" onchange="renderScore()"
             class="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-100">
-            <option value="line">Bar (｜)</option>
-            <option value="dots">Dots Only</option>
+            <option value="marks" selected>Beat Marks (No Line)</option>
+            <option value="line">Vertical Line (｜)</option>
           </select>
         </div>
         <div class="col-span-2">
@@ -395,8 +395,7 @@
             shakuhachi size (defaulting to standard 1.8 in D).</li>
           <li><strong>Kinko-ryu vs. Tozan-ryu:</strong>
             <ul class="list-circle pl-4 mt-1 space-y-1 text-zinc-400">
-              <li><strong class="text-zinc-200">Kinko-ryu (Chikumeisha):</strong> Uses ● <em>Omote-ma</em> (right
-                downbeat dots), ○ <em>Ura-ma</em> (left upbeat circles), and vertical sustain/beam lines.</li>
+              <li><strong class="text-zinc-200">Kinko-ryu (Chikumeisha):</strong> Uses diagonally sloping beat marks on the right (with multi-beat marks placed directly beside held notes) and bold black register/pitch modifiers (<code>乙</code>, <code>甲</code>, <code>メ</code>, <code>中</code>) on the left side opposite the beat marks.</li>
               <li><strong class="text-zinc-200">Tozan-ryu:</strong> Uses a continuous boxed measure grid with time
                 signature headers (<code>4/4</code>, <code>2/4</code>, <code>3/4</code>), horizontal sustain dashes
                 (<code>ー</code>), left-hand eighth-note beams, and parenthetical register marks <code>(乙)</code> /
@@ -776,26 +775,26 @@
     const SHAKUHACHI_MAP = {
       0: { kana: 'ロ', meri: '', reg: '乙' },
       1: { kana: 'ツ', meri: '大メ', reg: '乙' },
-      2: { kana: 'ツ', meri: '中メ', reg: '乙' },
+      2: { kana: 'ツ', meri: '中', reg: '乙' },
       3: { kana: 'ツ', meri: '', reg: '乙' },
       4: { kana: 'レ', meri: 'メ', reg: '乙' },
       5: { kana: 'レ', meri: '', reg: '乙' },
       6: { kana: 'チ', meri: 'メ', reg: '乙' },
       7: { kana: 'チ', meri: '', reg: '乙' },
       8: { kana: 'リ', meri: 'メ', reg: '乙' },
-      9: { kana: 'リ', meri: '中メ', reg: '乙' },
+      9: { kana: 'リ', meri: '中', reg: '乙' },
       10: { kana: 'リ', meri: '', reg: '乙' },
       11: { kana: 'ハ', meri: 'メ', reg: '乙' },
       12: { kana: 'ロ', meri: '', reg: '甲' },
       13: { kana: 'ツ', meri: '大メ', reg: '甲' },
-      14: { kana: 'ツ', meri: '中メ', reg: '甲' },
+      14: { kana: 'ツ', meri: '中', reg: '甲' },
       15: { kana: 'ツ', meri: '', reg: '甲' },
       16: { kana: 'レ', meri: 'メ', reg: '甲' },
       17: { kana: 'レ', meri: '', reg: '甲' },
       18: { kana: 'チ', meri: 'メ', reg: '甲' },
       19: { kana: 'チ', meri: '', reg: '甲' },
       20: { kana: 'ヒ', meri: 'メ', reg: '甲' },
-      21: { kana: 'ヒ', meri: '中メ', reg: '甲' },
+      21: { kana: 'ヒ', meri: '中', reg: '甲' },
       22: { kana: 'ヒ', meri: '', reg: '甲' },
       23: { kana: 'ハ', meri: 'メ', reg: '甲' },
       24: { kana: 'ハ', meri: '', reg: '甲' }
@@ -960,7 +959,7 @@
 
       const translated = events.map(ev => {
         if (ev.isRest) {
-          return { ...ev, kana: '◯', meri: '', reg: '', outOfRange: false };
+          return { ...ev, kana: school === 'kinko' ? '∨' : '◯', meri: '', reg: '', outOfRange: false };
         }
         const effectiveMidi = ev.midi + transpose;
         const soundedPitch = midiToPitchName(effectiveMidi);
@@ -990,6 +989,7 @@
             raw: ev.raw,
             beatPos: currentBeat,
             duration: 1,
+            totalBeats: Math.round(ev.beats),
             subdiv: 1,
             outOfRange: ev.outOfRange
           });
@@ -1006,6 +1006,7 @@
               raw: '',
               beatPos: currentBeat,
               duration: step,
+              totalBeats: 0,
               subdiv: step < 1 ? 2 : 1
             });
             currentBeat += step;
@@ -1021,6 +1022,7 @@
             raw: ev.raw,
             beatPos: currentBeat,
             duration: ev.beats,
+            totalBeats: 1,
             subdiv: ev.beats <= 0.25 ? 4 : 2,
             outOfRange: ev.outOfRange
           });
@@ -1131,32 +1133,60 @@
           const isUpBeat = Math.abs((slot.beatPos % 1) - 0.5) < 0.01;
 
           if (school === 'kinko') {
+            // Left side (opposite beat marks): Register (乙 / 甲) and Meri / Chu (メ / 中) in bold black
+            const hasBothModifiers = Boolean(slot.reg && slot.meri);
             if (slot.reg) {
-              svg += `<text x="${colCenterX + 22}" y="${textY - 10}" font-size="11" font-weight="700" fill="#b45309" text-anchor="middle">${slot.reg}</text>`;
+              const regY = hasBothModifiers ? textY - 11 : textY - 7;
+              svg += `<text x="${colCenterX - 22}" y="${regY}" font-size="14" font-weight="700" fill="#18181b" text-anchor="middle">${slot.reg}</text>`;
+            }
+
+            if (slot.meri) {
+              const meriY = hasBothModifiers ? textY + 6 : textY + 3;
+              svg += `<text x="${colCenterX - 22}" y="${meriY}" font-size="14.5" font-weight="700" fill="#18181b" text-anchor="middle">${slot.meri}</text>`;
             }
 
             if (slot.type === 'sustain') {
               if (!slot.isRest && sustainStyle === 'line') {
                 svg += `<line x1="${colCenterX}" y1="${textY - 15}" x2="${colCenterX}" y2="${yCursor + slotHeight - 6}" stroke="#18181b" stroke-width="2.2" stroke-linecap="round"/>`;
               }
+            } else if (slot.isRest) {
+              svg += `<text x="${colCenterX}" y="${textY - 3}" font-size="14" font-weight="700" fill="#52525b" text-anchor="middle">${slot.kana}</text>`;
             } else {
               const fontSize = slot.subdiv >= 4 ? 15 : (slot.subdiv === 2 ? 19 : 23);
               const fillCol = slot.outOfRange ? '#dc2626' : '#18181b';
               svg += `<text x="${colCenterX}" y="${textY}" font-size="${fontSize}" font-weight="600" fill="${fillCol}" text-anchor="middle">${slot.kana}</text>`;
             }
 
-            if (slot.meri) {
-              svg += `<text x="${colCenterX - 18}" y="${textY + 4}" font-size="9.5" font-weight="700" fill="#9a3412" text-anchor="middle">${slot.meri}</text>`;
-            }
-
             if (showHints && slot.raw && slot.raw !== 'Rest') {
-              svg += `<text x="${colCenterX - 27}" y="${textY - 4}" font-size="8" font-family="Inter, sans-serif" fill="#a1a1aa" text-anchor="end">${slot.raw}</text>`;
+              svg += `<text x="${colCenterX - 33}" y="${textY - 4}" font-size="8" font-family="Inter, sans-serif" fill="#a1a1aa" text-anchor="end">${slot.raw}</text>`;
             }
 
-            if (isOnBeat) {
-              svg += `<circle cx="${colCenterX + 19}" cy="${textY - 6}" r="3" fill="#18181b"/>`;
-            } else if (isUpBeat) {
-              svg += `<circle cx="${colCenterX - 17}" cy="${textY - 6}" r="2.8" fill="none" stroke="#18181b" stroke-width="1.3"/>`;
+            // Right side: Diagonally sloping beat marks (multi-beat marks placed next to the note)
+            const bx = colCenterX + 19;
+            if (!slot.isRest) {
+              if (sustainStyle === 'marks') {
+                if (slot.type === 'attack') {
+                  if (isOnBeat) {
+                    const numMarks = Math.max(1, Math.round(slot.totalBeats || 1));
+                    const startY = numMarks === 1 ? textY - 6 : (numMarks === 2 ? textY - 10 : textY - 12);
+                    const stepY = numMarks <= 2 ? 9 : 8.5;
+                    for (let m = 0; m < numMarks; m++) {
+                      const by = startY + (m * stepY);
+                      svg += `<line x1="${bx + 4}" y1="${by - 3.5}" x2="${bx - 4}" y2="${by + 3.5}" stroke="#18181b" stroke-width="2.3" stroke-linecap="round"/>`;
+                    }
+                  } else if (isUpBeat) {
+                    svg += `<circle cx="${bx}" cy="${textY - 6}" r="2.8" fill="none" stroke="#18181b" stroke-width="1.4"/>`;
+                  }
+                }
+              } else {
+                // Vertical Line (｜) sustain mode: 1 diagonal beat mark per beat
+                if (isOnBeat) {
+                  const by = textY - 6;
+                  svg += `<line x1="${bx + 4}" y1="${by - 3.5}" x2="${bx - 4}" y2="${by + 3.5}" stroke="#18181b" stroke-width="2.3" stroke-linecap="round"/>`;
+                } else if (isUpBeat) {
+                  svg += `<circle cx="${bx}" cy="${textY - 6}" r="2.8" fill="none" stroke="#18181b" stroke-width="1.4"/>`;
+                }
+              }
             }
 
             if (slot.subdiv >= 2 && slot.type === 'attack') {
@@ -1167,8 +1197,10 @@
             }
 
           } else {
+            const hasBothModifiers = Boolean(slot.reg && slot.meri);
             if (slot.reg) {
-              svg += `<text x="${colCenterX + 21}" y="${textY - 2}" font-size="9.5" font-weight="600" fill="#18181b" text-anchor="middle">(${slot.reg})</text>`;
+              const regY = hasBothModifiers ? textY - 13 : textY - 8;
+              svg += `<text x="${colCenterX - 20}" y="${regY}" font-size="11.5" font-weight="700" fill="#18181b" text-anchor="middle">(${slot.reg})</text>`;
             }
 
             if (slot.type === 'sustain') {
@@ -1186,7 +1218,8 @@
             }
 
             if (slot.meri) {
-              svg += `<text x="${colCenterX - 18}" y="${textY - 8}" font-size="8.5" font-weight="700" fill="#9a3412" text-anchor="middle">${slot.meri}</text>`;
+              const meriY = hasBothModifiers ? textY + 5 : textY + 2;
+              svg += `<text x="${colCenterX - 20}" y="${meriY}" font-size="13" font-weight="700" fill="#18181b" text-anchor="middle">${slot.meri}</text>`;
             }
 
             if (slot.subdiv >= 2) {
@@ -1207,7 +1240,7 @@
 
       // Legend Footer
       const legendText = school === 'kinko'
-        ? "Kinko-ryu Legend: ● Omote-ma (Downbeat, Right)  ○ Ura-ma (Upbeat, Left)  ｜ Sustain / Subdivision  ◯ Rest (Ma)  乙 Otsu (Low)  甲 Kan (High)"
+        ? "Kinko-ryu Legend: ／ Beat Mark (Right; 2 marks = 2 beats)  ○ Upbeat  ∨ Breath / Rest  Left of Note: メ Meri  中 Chu-meri  乙 Otsu (Low)  甲 Kan (High)"
         : "Tozan-ryu Legend: Solid Box = 1 Measure (4/4, 2/4, 3/4)  ー Sustained Beat  Left Vertical Bar = Quaver (1/8) Beam  (乙)/(甲) Register";
       svg += `<text x="36" y="${svgHeight - 28}" font-size="9.5" font-family="Inter, sans-serif" fill="#71717a">${legendText}</text>`;
       svg += `</svg>`;
