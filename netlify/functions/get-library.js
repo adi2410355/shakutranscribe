@@ -8,41 +8,22 @@ exports.handler = async (event) => {
   const siteId = process.env.SITE_ID || process.env.NETLIFY_SITE_ID;
   const isDebug = event.queryStringParameters && event.queryStringParameters.debug === '1';
 
-  // Built-in system & Netlify runtime keys that are NOT Personal Access Tokens
-  const BUILTIN_KEYS = new Set([
-    'PATH', 'LD_LIBRARY_PATH', 'NODE_PATH', 'LANG', 'TZ', 'SHLVL', 'PWD', '_',
-    'NETLIFY', 'NETLIFY_DEV', 'NETLIFY_LOCAL', 'NETLIFY_FUNCTIONS_TOKEN',
-    'NETLIFY_IMAGES_CDN_DOMAIN', 'SITE_ID', 'NETLIFY_SITE_ID', 'SITE_NAME',
-    'URL', 'DEPLOY_URL', 'DEPLOY_PRIME_URL', 'DEPLOY_ID', 'BUILD_ID', 'CONTEXT',
-    'NODE_VERSION', 'YARN_VERSION', 'HOME', 'USER', 'LOGNAME'
-  ]);
-
-  const allNonAwsEnvKeys = Object.keys(process.env).filter(
-    k => !k.startsWith('AWS_') && !k.startsWith('LAMBDA_') && !k.startsWith('_')
-  );
-
   const candidateTokens = [];
   const seenValues = new Set();
 
-  // Pass 1: Any variable whose value starts with "nfp_" (Netlify Personal Access Token)
+  // Pass 1: Check both Environment Variable VALUES and KEYS for "nfp_" (Netlify Personal Access Token)
+  // (Supports tokens pasted into either the Value box or the Key box in Netlify UI!)
   for (const [k, v] of Object.entries(process.env)) {
-    if (!v || typeof v !== 'string' || BUILTIN_KEYS.has(k)) continue;
-    if (k.startsWith('AWS_') || k.startsWith('LAMBDA_') || k.startsWith('_')) continue;
-    const trimmed = v.trim();
-    if (trimmed.startsWith('nfp_') && !seenValues.has(trimmed)) {
-      seenValues.add(trimmed);
-      candidateTokens.push({ key: k, token: trimmed });
-    }
-  }
+    const keyTrimmed = (k || '').trim();
+    const valTrimmed = typeof v === 'string' ? v.trim() : '';
 
-  // Pass 2: Any other user-defined variable (not in BUILTIN_KEYS or AWS/LAMBDA)
-  for (const [k, v] of Object.entries(process.env)) {
-    if (!v || typeof v !== 'string' || BUILTIN_KEYS.has(k)) continue;
-    if (k.startsWith('AWS_') || k.startsWith('LAMBDA_') || k.startsWith('_')) continue;
-    const trimmed = v.trim();
-    if (trimmed.length >= 16 && !seenValues.has(trimmed)) {
-      seenValues.add(trimmed);
-      candidateTokens.push({ key: k, token: trimmed });
+    if (valTrimmed.startsWith('nfp_') && !seenValues.has(valTrimmed)) {
+      seenValues.add(valTrimmed);
+      candidateTokens.push({ source: `value of ${keyTrimmed}`, token: valTrimmed });
+    }
+    if (keyTrimmed.startsWith('nfp_') && !seenValues.has(keyTrimmed)) {
+      seenValues.add(keyTrimmed);
+      candidateTokens.push({ source: `key ${keyTrimmed.slice(0, 8)}...`, token: keyTrimmed });
     }
   }
 
@@ -54,8 +35,7 @@ exports.handler = async (event) => {
         body: JSON.stringify({
           status: 'missing_credentials',
           hasSiteId: Boolean(siteId),
-          candidateCount: candidateTokens.length,
-          allNonAwsEnvKeys
+          candidateCount: candidateTokens.length
         }, null, 2)
       };
     }
@@ -68,7 +48,7 @@ exports.handler = async (event) => {
 
   try {
     let response = null;
-    let workingKey = null;
+    let workingSource = null;
     const tokenAttempts = [];
 
     for (const candidate of candidateTokens) {
@@ -83,14 +63,14 @@ exports.handler = async (event) => {
       );
 
       tokenAttempts.push({
-        envKey: candidate.key,
-        tokenPrefix: candidate.token.slice(0, 6) + '...',
+        source: candidate.source,
+        tokenPrefix: candidate.token.slice(0, 8) + '...',
         httpStatus: res.status
       });
 
       if (res.ok) {
         response = res;
-        workingKey = candidate.key;
+        workingSource = candidate.source;
         break;
       }
     }
@@ -102,8 +82,7 @@ exports.handler = async (event) => {
           headers,
           body: JSON.stringify({
             status: 'netlify_api_error',
-            attempts: tokenAttempts,
-            allNonAwsEnvKeys
+            attempts: tokenAttempts
           }, null, 2)
         };
       }
@@ -160,7 +139,7 @@ exports.handler = async (event) => {
         headers,
         body: JSON.stringify({
           status: 'ok',
-          workingEnvKey: workingKey,
+          workingToken: workingSource,
           attempts: tokenAttempts,
           totalSubmissionsFound: Array.isArray(submissions) ? submissions.length : 0,
           verifiedScoresCount: verifiedScores.length,
@@ -179,7 +158,7 @@ exports.handler = async (event) => {
       return {
         statusCode: 200,
         headers,
-        body: JSON.stringify({ status: 'exception', message: err.message, allNonAwsEnvKeys }, null, 2)
+        body: JSON.stringify({ status: 'exception', message: err.message }, null, 2)
       };
     }
     return {
