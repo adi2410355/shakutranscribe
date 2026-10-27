@@ -6,14 +6,42 @@ exports.handler = async (event) => {
   };
 
   const siteId = process.env.SITE_ID || process.env.NETLIFY_SITE_ID;
-  const token =
+
+  // 1. Check explicit common variable names
+  let token =
     process.env.NETLIFY_ACCESS_TOKEN ||
     process.env.NETLIFY_AUTH_TOKEN ||
     process.env.NETLIFY_API_TOKEN ||
     process.env.NETLIFY_TOKEN ||
+    process.env.NETLIFY_PAT ||
+    process.env.PERSONAL_ACCESS_TOKEN ||
     process.env.ACCESS_TOKEN;
 
+  // 2. Auto-detect any env variable whose value is a Netlify Personal Access Token (starts with "nfp_")
+  //    or any non-AWS key containing TOKEN / PAT
+  if (!token) {
+    for (const [k, v] of Object.entries(process.env)) {
+      if (!v || typeof v !== 'string') continue;
+      const trimmed = v.trim();
+      if (trimmed.startsWith('nfp_')) {
+        token = trimmed;
+        break;
+      }
+      if (!k.startsWith('AWS_') && !k.startsWith('LAMBDA_') && /(TOKEN|PAT|AUTH)/i.test(k)) {
+        token = trimmed;
+        break;
+      }
+    }
+  } else {
+    token = token.trim();
+  }
+
   const isDebug = event.queryStringParameters && event.queryStringParameters.debug === '1';
+
+  // List non-AWS env keys for easy debugging if needed
+  const visibleCustomKeys = Object.keys(process.env).filter(
+    k => !k.startsWith('AWS_') && !k.startsWith('LAMBDA_') && !['PATH', 'LANG', 'TZ', 'LD_LIBRARY_PATH', 'NODE_PATH', 'SHLVL', 'PWD', '_'].includes(k)
+  );
 
   if (!siteId || !token) {
     if (isDebug) {
@@ -24,7 +52,8 @@ exports.handler = async (event) => {
           status: 'missing_credentials',
           hasSiteId: Boolean(siteId),
           hasToken: Boolean(token),
-          help: 'In Netlify Dashboard -> Site configuration -> Environment variables, ensure NETLIFY_ACCESS_TOKEN (Personal Access Token) is set.'
+          visibleEnvKeysInFunction: visibleCustomKeys,
+          help: 'If your variable name is not in visibleEnvKeysInFunction above, verify in Netlify -> Site configuration -> Environment variables that the variable Scope includes "Functions" (or "All scopes") and belongs to this site.'
         }, null, 2)
       };
     }
@@ -74,7 +103,6 @@ exports.handler = async (event) => {
 
       for (const sub of ordered) {
         const data = sub.data || {};
-        // Accept submissions from 'repository-submissions' form
         if (sub.form_name && sub.form_name !== 'repository-submissions') continue;
 
         let entry = null;
@@ -113,6 +141,8 @@ exports.handler = async (event) => {
         headers,
         body: JSON.stringify({
           status: 'ok',
+          hasSiteId: true,
+          hasToken: true,
           totalSubmissionsFound: Array.isArray(submissions) ? submissions.length : 0,
           verifiedScoresCount: verifiedScores.length,
           verifiedScores
