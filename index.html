@@ -84,8 +84,9 @@
 <body class="min-h-screen flex flex-col">
 
   <!-- Hidden Netlify Form for Verified Public Repository Submissions -->
-  <form name="repository-submissions" method="POST" data-netlify="true" hidden>
+  <form name="repository-submissions" method="POST" data-netlify="true" netlify-honeypot="bot-field" hidden>
     <input type="hidden" name="form-name" value="repository-submissions" />
+    <input type="text" name="bot-field" />
     <input type="text" name="title" />
     <input type="text" name="composer" />
     <input type="text" name="contributor" />
@@ -707,6 +708,7 @@
 
       const formData = new URLSearchParams();
       formData.append('form-name', 'repository-submissions');
+      formData.append('bot-field', 'pending-verification');
       formData.append('title', obj.title);
       formData.append('composer', document.getElementById('sub-composer').value);
       formData.append('contributor', obj.contributor);
