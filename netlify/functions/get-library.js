@@ -8,16 +8,26 @@ exports.handler = async (event) => {
   const siteId = process.env.SITE_ID || process.env.NETLIFY_SITE_ID;
   const isDebug = event.queryStringParameters && event.queryStringParameters.debug === '1';
 
-  const SYSTEM_KEYS = new Set([
-    'PATH', 'LD_LIBRARY_PATH', 'NODE_PATH', 'LANG', 'TZ', 'SHLVL', 'PWD', '_'
+  // Built-in system & Netlify runtime keys that are NOT Personal Access Tokens
+  const BUILTIN_KEYS = new Set([
+    'PATH', 'LD_LIBRARY_PATH', 'NODE_PATH', 'LANG', 'TZ', 'SHLVL', 'PWD', '_',
+    'NETLIFY', 'NETLIFY_DEV', 'NETLIFY_LOCAL', 'NETLIFY_FUNCTIONS_TOKEN',
+    'NETLIFY_IMAGES_CDN_DOMAIN', 'SITE_ID', 'NETLIFY_SITE_ID', 'SITE_NAME',
+    'URL', 'DEPLOY_URL', 'DEPLOY_PRIME_URL', 'DEPLOY_ID', 'BUILD_ID', 'CONTEXT',
+    'NODE_VERSION', 'YARN_VERSION', 'HOME', 'USER', 'LOGNAME'
   ]);
+
+  const allNonAwsEnvKeys = Object.keys(process.env).filter(
+    k => !k.startsWith('AWS_') && !k.startsWith('LAMBDA_') && !k.startsWith('_')
+  );
 
   const candidateTokens = [];
   const seenValues = new Set();
 
-  // Pass 1: Any environment variable whose value starts with "nfp_" (Netlify Personal Access Token)
+  // Pass 1: Any variable whose value starts with "nfp_" (Netlify Personal Access Token)
   for (const [k, v] of Object.entries(process.env)) {
-    if (!v || typeof v !== 'string' || SYSTEM_KEYS.has(k)) continue;
+    if (!v || typeof v !== 'string' || BUILTIN_KEYS.has(k)) continue;
+    if (k.startsWith('AWS_') || k.startsWith('LAMBDA_') || k.startsWith('_')) continue;
     const trimmed = v.trim();
     if (trimmed.startsWith('nfp_') && !seenValues.has(trimmed)) {
       seenValues.add(trimmed);
@@ -25,12 +35,12 @@ exports.handler = async (event) => {
     }
   }
 
-  // Pass 2: Any non-AWS, non-system variable whose key name contains TOKEN, PAT (whole word), or AUTH
+  // Pass 2: Any other user-defined variable (not in BUILTIN_KEYS or AWS/LAMBDA)
   for (const [k, v] of Object.entries(process.env)) {
-    if (!v || typeof v !== 'string' || SYSTEM_KEYS.has(k)) continue;
-    if (k.startsWith('AWS_') || k.startsWith('LAMBDA_')) continue;
+    if (!v || typeof v !== 'string' || BUILTIN_KEYS.has(k)) continue;
+    if (k.startsWith('AWS_') || k.startsWith('LAMBDA_') || k.startsWith('_')) continue;
     const trimmed = v.trim();
-    if (/(TOKEN|_PAT$|^PAT_|^PAT$|AUTH)/i.test(k) && !seenValues.has(trimmed)) {
+    if (trimmed.length >= 16 && !seenValues.has(trimmed)) {
       seenValues.add(trimmed);
       candidateTokens.push({ key: k, token: trimmed });
     }
@@ -44,7 +54,8 @@ exports.handler = async (event) => {
         body: JSON.stringify({
           status: 'missing_credentials',
           hasSiteId: Boolean(siteId),
-          candidateCount: candidateTokens.length
+          candidateCount: candidateTokens.length,
+          allNonAwsEnvKeys
         }, null, 2)
       };
     }
@@ -91,7 +102,8 @@ exports.handler = async (event) => {
           headers,
           body: JSON.stringify({
             status: 'netlify_api_error',
-            attempts: tokenAttempts
+            attempts: tokenAttempts,
+            allNonAwsEnvKeys
           }, null, 2)
         };
       }
@@ -167,7 +179,7 @@ exports.handler = async (event) => {
       return {
         statusCode: 200,
         headers,
-        body: JSON.stringify({ status: 'exception', message: err.message }, null, 2)
+        body: JSON.stringify({ status: 'exception', message: err.message, allNonAwsEnvKeys }, null, 2)
       };
     }
     return {
