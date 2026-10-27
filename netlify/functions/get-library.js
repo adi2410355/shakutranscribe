@@ -6,44 +6,37 @@ exports.handler = async (event) => {
   };
 
   const siteId = process.env.SITE_ID || process.env.NETLIFY_SITE_ID;
-
-  // 1. Check explicit common variable names
-  let token =
-    process.env.NETLIFY_ACCESS_TOKEN ||
-    process.env.NETLIFY_AUTH_TOKEN ||
-    process.env.NETLIFY_API_TOKEN ||
-    process.env.NETLIFY_TOKEN ||
-    process.env.NETLIFY_PAT ||
-    process.env.PERSONAL_ACCESS_TOKEN ||
-    process.env.ACCESS_TOKEN;
-
-  // 2. Auto-detect any env variable whose value is a Netlify Personal Access Token (starts with "nfp_")
-  //    or any non-AWS key containing TOKEN / PAT
-  if (!token) {
-    for (const [k, v] of Object.entries(process.env)) {
-      if (!v || typeof v !== 'string') continue;
-      const trimmed = v.trim();
-      if (trimmed.startsWith('nfp_')) {
-        token = trimmed;
-        break;
-      }
-      if (!k.startsWith('AWS_') && !k.startsWith('LAMBDA_') && /(TOKEN|PAT|AUTH)/i.test(k)) {
-        token = trimmed;
-        break;
-      }
-    }
-  } else {
-    token = token.trim();
-  }
-
   const isDebug = event.queryStringParameters && event.queryStringParameters.debug === '1';
 
-  // List non-AWS env keys for easy debugging if needed
-  const visibleCustomKeys = Object.keys(process.env).filter(
-    k => !k.startsWith('AWS_') && !k.startsWith('LAMBDA_') && !['PATH', 'LANG', 'TZ', 'LD_LIBRARY_PATH', 'NODE_PATH', 'SHLVL', 'PWD', '_'].includes(k)
-  );
+  const SYSTEM_KEYS = new Set([
+    'PATH', 'LD_LIBRARY_PATH', 'NODE_PATH', 'LANG', 'TZ', 'SHLVL', 'PWD', '_'
+  ]);
 
-  if (!siteId || !token) {
+  const candidateTokens = [];
+  const seenValues = new Set();
+
+  // Pass 1: Any environment variable whose value starts with "nfp_" (Netlify Personal Access Token)
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!v || typeof v !== 'string' || SYSTEM_KEYS.has(k)) continue;
+    const trimmed = v.trim();
+    if (trimmed.startsWith('nfp_') && !seenValues.has(trimmed)) {
+      seenValues.add(trimmed);
+      candidateTokens.push({ key: k, token: trimmed });
+    }
+  }
+
+  // Pass 2: Any non-AWS, non-system variable whose key name contains TOKEN, PAT (whole word), or AUTH
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!v || typeof v !== 'string' || SYSTEM_KEYS.has(k)) continue;
+    if (k.startsWith('AWS_') || k.startsWith('LAMBDA_')) continue;
+    const trimmed = v.trim();
+    if (/(TOKEN|_PAT$|^PAT_|^PAT$|AUTH)/i.test(k) && !seenValues.has(trimmed)) {
+      seenValues.add(trimmed);
+      candidateTokens.push({ key: k, token: trimmed });
+    }
+  }
+
+  if (!siteId || candidateTokens.length === 0) {
     if (isDebug) {
       return {
         statusCode: 200,
@@ -51,9 +44,7 @@ exports.handler = async (event) => {
         body: JSON.stringify({
           status: 'missing_credentials',
           hasSiteId: Boolean(siteId),
-          hasToken: Boolean(token),
-          visibleEnvKeysInFunction: visibleCustomKeys,
-          help: 'If your variable name is not in visibleEnvKeysInFunction above, verify in Netlify -> Site configuration -> Environment variables that the variable Scope includes "Functions" (or "All scopes") and belongs to this site.'
+          candidateCount: candidateTokens.length
         }, null, 2)
       };
     }
@@ -65,25 +56,42 @@ exports.handler = async (event) => {
   }
 
   try {
-    const response = await fetch(
-      `https://api.netlify.com/api/v1/sites/${siteId}/submissions?per_page=100`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+    let response = null;
+    let workingKey = null;
+    const tokenAttempts = [];
 
-    if (!response.ok) {
+    for (const candidate of candidateTokens) {
+      const res = await fetch(
+        `https://api.netlify.com/api/v1/sites/${siteId}/submissions?per_page=100`,
+        {
+          headers: {
+            Authorization: `Bearer ${candidate.token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      tokenAttempts.push({
+        envKey: candidate.key,
+        tokenPrefix: candidate.token.slice(0, 6) + '...',
+        httpStatus: res.status
+      });
+
+      if (res.ok) {
+        response = res;
+        workingKey = candidate.key;
+        break;
+      }
+    }
+
+    if (!response) {
       if (isDebug) {
         return {
           statusCode: 200,
           headers,
           body: JSON.stringify({
             status: 'netlify_api_error',
-            httpStatus: response.status,
-            statusText: response.statusText
+            attempts: tokenAttempts
           }, null, 2)
         };
       }
@@ -98,7 +106,6 @@ exports.handler = async (event) => {
     const verifiedScores = [];
 
     if (Array.isArray(submissions)) {
-      // Oldest first so newer submissions preserve chronological order
       const ordered = [...submissions].reverse();
 
       for (const sub of ordered) {
@@ -141,8 +148,8 @@ exports.handler = async (event) => {
         headers,
         body: JSON.stringify({
           status: 'ok',
-          hasSiteId: true,
-          hasToken: true,
+          workingEnvKey: workingKey,
+          attempts: tokenAttempts,
           totalSubmissionsFound: Array.isArray(submissions) ? submissions.length : 0,
           verifiedScoresCount: verifiedScores.length,
           verifiedScores
